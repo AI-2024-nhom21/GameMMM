@@ -5,145 +5,247 @@ from game.player import Player
 from game.enemy import Enemy
 from game.learning.io import save_qtable, load_qtable
 from game.var import GRID_SIZE
+import copy
 
 # Q-learning constants
 ALPHA = 0.1
-GAMMA = 0.9
+GAMMA = 0.99
 EPSILON = 1
 EPS_MIN = 0.01
 EPS_DECAY = 0.995
 EPISOLES = 1000
 MAX_STEPS = 200
 
+EXPLORE = 0
+EXPLOIT = 1
+
 UP, DOWN, LEFT, RIGHT = 0, 1, 2, 3
 ACTIONS = [UP, DOWN, LEFT, RIGHT]
 WALL, SPACE = 0, 1
 
+WIN_SCORE = 600
+LOOSE_SCORE = -300
 
-def convert_level_to_board(walls, grid_size=GRID_SIZE):
-    board = np.ones((grid_size, grid_size), dtype=int)
-    for (r1, c1, r2, c2) in walls:
-        if r1 == r2:
-            row, col = r1 - 1, min(c1, c2)
-        else:
-            row, col = min(r1, r2), c1 - 1
-        board[row, col] = WALL
-    return board
+class Point:
+    def __init__(self, row, col):
+        self.row = row
+        self.col = col
 
+    def toTuple(self):
+        return (self.row, self.col)
 
-def get_distance(p1, p2):
-    return abs(p1[0] - p2[0]) + abs(p1[1] - p2[1])
+    def compare(self, other):
+        return self.row == other.row and self.col == other.col
 
+def getReward(playerPos, goalPos, enemyPos, goalDis, monsterDis, path, monsterFight = 0):
+    point = 0
+    if playerPos.compare(goalPos) == True:
+        return WIN_SCORE
+    elif playerPos.compare(enemyPos) == True:
+        return LOOSE_SCORE
+    else:
+        if goalDis[1] < goalDis[0]:
+            # point += 30
+            point += 20
+        elif goalDis[1] > goalDis[0]:
+            point += -25
+        if monsterDis[1] < monsterDis[0]:
+            point += -10
+    
+    tPlayerPos = playerPos.toTuple()
+    if tPlayerPos in path:
+        point += -100
+    else:
+        path.append(tPlayerPos)
+
+    return point
+
+def getDistance(pos1, pos2):
+    # manhattan
+    return abs(pos2.row - pos1.row) + abs(pos2.col - pos1.col)
+
+def generateQtable(N):
+    # 1 monster for now
+    spaces = []
+    shape = N
+    for row in range(1, shape + 1):
+        for col in range(1, shape + 1):
+            spaces.append((row, col))
+
+    qtable = {} # {state: [scores for up/down/lef/right]}
+    for playerPos in spaces:
+        for monsterPos in spaces:
+            # state = (playerPos, monsterPos)
+            state = coorTuplesToId(playerPos, monsterPos)
+            scores = [0] * 4
+            qtable[state] = scores
+    
+    return qtable
+
+def coorTuplesToId(coorTup1, coorTup2):
+    # row and col is from 0 to 100
+    num1, num2 = coorTup1
+    num3, num4 = coorTup2
+    nums = [num1, num2, num3, num4]
+    resultId = 0
+    for num in nums:
+        resultId = resultId * 100 + num
+    return resultId
+
+def idToCoorTuples(id):
+    nums = []
+    while(id > 0):
+        nums.append(id % 100)
+        id //= 100
+    return ((nums[3], nums[2]), (nums[1], nums[0]))
+
+def actionIdToString(actionId):
+    idMap = {UP: "UP", DOWN: "DOWN", LEFT: "LEFT", RIGHT: "RIGHT"}
+    return idMap[actionId]
 
 class BotAdapter(Player):
-    def __init__(self, start_pos, board, walls):
-        self.start_pos = start_pos
-        self.pos = start_pos  # logic position (0-based)
-        self.board = board
+    def __init__(self, startPos, gridSize, walls):
+        temp = Point(startPos[0], startPos[1])
+        self.startPos = temp
+        self.pos = copy.copy(temp)
         self.walls = walls
-        super().__init__([start_pos[0] + 1, start_pos[1] + 1])  # visual position (1-based)
+        self.gridSize = gridSize
+        super().__init__([temp.row, temp.col])  # visual position (1-based)
 
     def reset(self):
-        self.pos = self.start_pos
-        self.player_pos = [self.start_pos[0] + 1, self.start_pos[1] + 1]
+        self.pos = copy.copy(self.startPos)
+        self.player_pos = [self.pos.row, self.pos.col]
 
-    def moveTo(self, new_pos):
-        r, c = new_pos
-        if 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE and self.board[r, c] != WALL:
-            self.pos = new_pos
-            self.player_pos = [r + 1, c + 1]
-            return True
-        return False
+    def moveTo(self, newPos):
+        return super().move(newPos, self.walls, self.gridSize)
 
     def moveUp(self):
-        self.direction = "up"
-        return self.moveTo((self.pos[0] - 1, self.pos[1]))
+        newPos = [self.pos.row - 1, self.pos.col]
+        result = self.moveTo(newPos)
+        if result:
+            self.pos.row -= 1
+        return result
 
     def moveDown(self):
-        self.direction = "down"
-        return self.moveTo((self.pos[0] + 1, self.pos[1]))
+        newPos = [self.pos.row + 1, self.pos.col]
+        result = self.moveTo(newPos)
+        if result:
+            self.pos.row += 1
+        return result
 
     def moveLeft(self):
-        self.direction = "left"
-        return self.moveTo((self.pos[0], self.pos[1] - 1))
+        newPos = [self.pos.row, self.pos.col - 1]
+        result = self.moveTo(newPos)
+        if result:
+            self.pos.col -= 1
+        return result
 
     def moveRight(self):
-        self.direction = "right"
-        return self.moveTo((self.pos[0], self.pos[1] + 1))
+        newPos = [self.pos.row, self.pos.col + 1]
+        result = self.moveTo(newPos)
+        if result:
+            self.pos.col += 1
+        return result
 
     def findValidMoves(self):
-        directions = [(self.pos[0] - 1, self.pos[1]),   # UP
-                      (self.pos[0] + 1, self.pos[1]),   # DOWN
-                      (self.pos[0], self.pos[1] - 1),   # LEFT
-                      (self.pos[0], self.pos[1] + 1)]   # RIGHT
-        valid = []
-        for i, (r, c) in enumerate(directions):
-            if 0 <= r < GRID_SIZE and 0 <= c < GRID_SIZE and self.board[r, c] != WALL:
-                valid.append(i)
-        return valid
+        results = []
+        originalPos = copy.copy(self.pos)
+        directions = {UP: self.moveUp, DOWN: self.moveDown, LEFT: self.moveLeft, RIGHT: self.moveRight}
+        for direct, moveFunc in directions.items():
+            if moveFunc():
+                results.append(direct)
+                self.moveTo([originalPos.row, originalPos.col])
+                self.pos = copy.copy(originalPos)
+        return results
+
 
 
 class EnemyAdapter(Enemy):
-    def __init__(self, start_pos, grid_size, walls):
-        super().__init__([start_pos[0] + 1, start_pos[1] + 1], grid_size, walls, enemy_type="white")
-        self.start_pos = start_pos
-        self.pos = start_pos
+    def __init__(self, startPos, gridSize, walls):
+        temp = Point(startPos[0], startPos[1])
+        self.startPos = temp
+        self.pos = copy.copy(temp)
+        super().__init__([temp.row, temp.col], gridSize, walls, "white")
 
     def reset(self):
-        self.pos = self.start_pos
-        self.enemy_pos = [self.start_pos[0] + 1, self.start_pos[1] + 1]
+        self.pos = copy.copy(self.startPos)
+        self.enemy_pos = [self.pos.row, self.pos.col]
 
-    def moveTowards(self, player_pos):
+    def moveTowards(self, playerPos):
         # Update internal position for movement logic
-        self.enemy_pos = [self.pos[0] + 1, self.pos[1] + 1]
-        new_pos = self.move_towards_player([player_pos[0] + 1, player_pos[1] + 1])
-        self.pos = (new_pos[0] - 1, new_pos[1] - 1)
+        newPos = self.move_towards_player([playerPos.row, playerPos.col])
+        self.pos.row = newPos[0]
+        self.pos.col = newPos[1]
 
+def train(player, monster, goal):
+    actionMap = {UP: player.moveUp, DOWN: player.moveDown, LEFT: player.moveLeft, RIGHT: player.moveRight}
+    qtable = generateQtable(GRID_SIZE)
+    esp = EPSILON
+    goalPos = Point(goal[0], goal[1])
 
-def train(board, player, monster, goal):
-    qtable = {(r, c): [0] * 4 for r in range(GRID_SIZE) for c in range(GRID_SIZE) if board[r, c] != WALL}
-    epsilon = EPSILON
-
-    for episode in range(EPISOLES):
+    for episole in range(EPISOLES):
+        gameOver = False
         player.reset()
         monster.reset()
-        state = player.pos
-        done = False
-        steps = 0
+        currentState = coorTuplesToId(player.pos.toTuple(), monster.pos.toTuple())
 
-        while not done and steps < MAX_STEPS:
-            steps += 1
-            valid_actions = player.findValidMoves()
-            if not valid_actions:
-                break
+        timestep = 0
+        path = []
+        found = False
+        # start a run
+        while not gameOver:
+            rand = random.random()
+            actionStrat = EXPLORE if rand < esp else EXPLOIT
+            chosenAction = None
 
-            if random.random() < epsilon:
-                action = random.choice(valid_actions)
+            validMoves = player.findValidMoves()
+            if actionStrat == EXPLORE:
+                randIndex = random.randint(0, len(validMoves) - 1)
+                chosenAction = validMoves[randIndex]
             else:
-                action = max(valid_actions, key=lambda a: qtable[state][a])
+                stateScores = qtable[currentState]
+                chosenAction = validMoves[0]
+                highestScore = stateScores[chosenAction]
+                for action in validMoves:
+                    score = stateScores[action]
+                    if score > highestScore:
+                        highestScore = score
+                        chosenAction = action
 
-            old_pos = state
-            [player.moveUp, player.moveDown, player.moveLeft, player.moveRight][action]()
+            monsterDis1 = getDistance(player.pos, monster.pos)
+            goalDis1 = getDistance(player.pos, goalPos)
+
+            actionFunc = actionMap[chosenAction]
+            actionFunc()
             monster.moveTowards(player.pos)
-            state = player.pos
 
-            reward = 0
-            if state == goal:
-                reward, done = 100, True
-            elif state == monster.pos:
-                reward, done = -100, True
-            else:
-                if get_distance(state, goal) < get_distance(old_pos, goal):
-                    reward += 9
-                if get_distance(state, monster.pos) < get_distance(old_pos, monster.pos):
-                    reward -= 5
+            monsterDis2 = getDistance(player.pos, monster.pos)
+            goalDis2 = getDistance(player.pos, goalPos)
 
-            old_value = qtable[old_pos][action]
-            next_max = max(qtable[state]) if state in qtable else 0
-            qtable[old_pos][action] = old_value + ALPHA * (reward + GAMMA * next_max - old_value)
+            point = getReward(player.pos, goalPos, monster.pos, (goalDis1, goalDis2), (monsterDis1, monsterDis2), path)
+            if point == LOOSE_SCORE or point == WIN_SCORE:
+                gameOver = True
+            if point == WIN_SCORE:
+                found = True
 
-        if epsilon > EPS_MIN:
-            epsilon *= EPS_DECAY
+            nextStateScores = qtable[coorTuplesToId(player.pos.toTuple(), monster.pos.toTuple())]
+            nextHighestScore = nextStateScores[0]
+            for score in nextStateScores:
+                if score > nextHighestScore:
+                    nextHighestScore = score
+
+            # UPDATE QTABLE ENTRY
+            qtable[currentState][chosenAction] = qtable[currentState][chosenAction] + ALPHA * (point + GAMMA * nextHighestScore - qtable[currentState][chosenAction])
+
+            currentState = coorTuplesToId(player.pos.toTuple(), monster.pos.toTuple())
+            timestep += 1
+        
+        
+        if esp > EPS_MIN:
+            esp = esp * EPS_DECAY
+        # else:
+        #     break
+    print("Solution found: ", found)
 
     print("✅ Training complete.")
     return qtable
@@ -151,22 +253,21 @@ def train(board, player, monster, goal):
 
 def train_all_levels():
     level_manager = LevelManager()
-    for level_index in range(1, 11):
+    for level_index in range(1, 9):
         print(f"\n🔁 Training level {level_index}...")
         level_manager.current_level = level_index
         level_data = level_manager.get_level_data()
 
         walls = level_data["walls"]
-        board = convert_level_to_board(walls)
 
-        player_pos = (level_data["player_pos"][0] - 1, level_data["player_pos"][1] - 1)
-        monster_pos = (level_data["mummy_pos_white"][0] - 1, level_data["mummy_pos_white"][1] - 1)
-        goal_pos = (level_data["stair_pos"][0] - 1, level_data["stair_pos"][1] - 1)
+        player_pos = level_data["player_pos"]
+        monster_pos = level_data["mummy_pos_white"]
+        goal_pos = level_data["stair_pos"]
 
-        player = BotAdapter(player_pos, board, walls)
+        player = BotAdapter(player_pos, GRID_SIZE, walls)
         monster = EnemyAdapter(monster_pos, GRID_SIZE, walls)
 
-        qtable = train(board.copy(), player, monster, goal_pos)
+        qtable = train(player, monster, goal_pos)
         save_qtable(level_index, qtable)
         print(f"✅ Q-table for level {level_index} saved.\n")
 
