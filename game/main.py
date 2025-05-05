@@ -7,6 +7,7 @@ from game.enemy import Enemy
 from game.menu import Menu, MENU_PAUSE, GAME_RUNNING
 from game.learning.Q_learning import BotAdapter, Point, load_qtable, coorTuplesToId, UP, DOWN, LEFT, RIGHT
 import time
+
 pygame.init()
 
 # Cài đặt màn hình
@@ -22,6 +23,10 @@ game_logic = GameLogic(screen)
 running = True
 clock = pygame.time.Clock()
 game_active = False
+
+
+last_bot_move_time = 0
+bot_move_interval = 400  # milliseconds 🔧
 
 # Hiển thị menu ban đầu
 menu.draw_menu()
@@ -49,7 +54,6 @@ while running:
 
                 if menu.play_type == "BOT":
                     goal = (stair_pos[0] - 1, stair_pos[1] - 1)
-
                     qtable = load_qtable(level_manager.current_level)
                     player = BotAdapter(player_pos, GRID_SIZE, walls)
                     enemies = [Enemy(mummy_pos, GRID_SIZE, walls, enemy_type="white")]
@@ -69,6 +73,7 @@ while running:
                     menu.selected_button = 0
                     menu.draw_menu()
                     game_active = False
+
                 elif menu.play_type != "BOT":
                     new_pos = player.player_pos.copy()
                     if event.key == pygame.K_w:
@@ -110,10 +115,10 @@ while running:
                             print("Chúc mừng! Bạn đã hoàn thành tất cả các cấp độ!")
                             running = False
 
-            # BOT di chuyển tự độ
+    #BOT tự động di chuyển
     current_time = pygame.time.get_ticks()
     if menu.play_type == "BOT" and game_active and current_time - last_bot_move_time >= bot_move_interval:
-        last_bot_move_time = current_time  # cập nhật thời gian di chuyển
+        last_bot_move_time = current_time
 
         state = coorTuplesToId(player.pos.toTuple(), (enemies[0].enemy_pos[0], enemies[0].enemy_pos[1]))
         valid_actions = player.findValidMoves()
@@ -166,7 +171,7 @@ while running:
     if game_active:
         player.update_animation(delta_time)
         for enemy in enemies:
-            enemy.update_animation(delta_time)
+            enemy.update_animation(delta_time)  # 🔧 hoạt ảnh mượt
 
         game_logic.draw_map(walls, stair_pos, stair_type, player, enemies)
         pygame.display.flip()
