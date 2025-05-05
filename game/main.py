@@ -6,7 +6,7 @@ from game.player import Player
 from game.enemy import Enemy
 from game.menu import Menu, MENU_PAUSE, GAME_RUNNING
 from game.learning.Q_learning import BotAdapter, Point, load_qtable, coorTuplesToId, UP, DOWN, LEFT, RIGHT
-
+import time
 pygame.init()
 
 # Cài đặt màn hình
@@ -110,56 +110,58 @@ while running:
                             print("Chúc mừng! Bạn đã hoàn thành tất cả các cấp độ!")
                             running = False
 
-            # BOT di chuyển tự động
-            if menu.play_type == "BOT" and game_active:
-                state = coorTuplesToId(player.pos.toTuple(), (enemies[0].enemy_pos[0], enemies[0].enemy_pos[1]))
-                valid_actions = player.findValidMoves()
-                state_scores = qtable[state]
-                chosen_action = valid_actions[0]
-                highest_score = state_scores[chosen_action]
-                for action in valid_actions:
-                    score = state_scores[action]
-                    if score > highest_score:
-                        highest_score = score
-                        chosen_action = action
+            # BOT di chuyển tự độ
+    current_time = pygame.time.get_ticks()
+    if menu.play_type == "BOT" and game_active and current_time - last_bot_move_time >= bot_move_interval:
+        last_bot_move_time = current_time  # cập nhật thời gian di chuyển
 
-                if chosen_action == UP:
-                    player.moveUp()
-                elif chosen_action == DOWN:
-                    player.moveDown()
-                elif chosen_action == LEFT:
-                    player.moveLeft()
-                elif chosen_action == RIGHT:
-                    player.moveRight()
+        state = coorTuplesToId(player.pos.toTuple(), (enemies[0].enemy_pos[0], enemies[0].enemy_pos[1]))
+        valid_actions = player.findValidMoves()
+        state_scores = qtable[state]
+        chosen_action = valid_actions[0]
+        highest_score = state_scores[chosen_action]
+        for action in valid_actions:
+            score = state_scores[action]
+            if score > highest_score:
+                highest_score = score
+                chosen_action = action
 
-                for enemy in enemies:
-                    enemy.move_towards_player(player.player_pos)
+        if chosen_action == UP:
+            player.moveUp()
+        elif chosen_action == DOWN:
+            player.moveDown()
+        elif chosen_action == LEFT:
+            player.moveLeft()
+        elif chosen_action == RIGHT:
+            player.moveRight()
 
-                for enemy in enemies:
-                    enemy_pos = Point(enemy.enemy_pos[0], enemy.enemy_pos[1])
-                    if player.pos.compare(enemy_pos):
-                        print("Game Over! Enemy đã bắt được bạn!")
-                        running = False
-                        break
+        for enemy in enemies:
+            enemy.move_towards_player(player.player_pos)
 
-                goal_pos = Point(stair_pos[0], stair_pos[1])
-                if player.pos.compare(goal_pos):
-                    print(f"Chúc mừng! Bạn đã hoàn thành Level {level_manager.current_level}!")
-                    if level_manager.next_level():
-                        level_data = level_manager.get_level_data()
-                        # board = convert_level_to_board(level_data["walls"])
-                        qtable = load_qtable(level_manager.current_level)
-                        player = BotAdapter(player_pos, GRID_SIZE, level_data["walls"])
-                        enemies = [Enemy(level_data["mummy_pos_white"], GRID_SIZE, level_data["walls"], enemy_type="white")]
-                        if level_data["mummy_pos_red"]:
-                            enemies.append(Enemy(level_data["mummy_pos_red"], GRID_SIZE, level_data["walls"], enemy_type="red"))
-                        stair_pos = level_data["stair_pos"]
-                        stair_type = level_data["stair_type"]
-                        walls = level_data["walls"]
-                        print(f"Chuyển sang Level {level_manager.current_level}")
-                    else:
-                        print("Chúc mừng! Bạn đã hoàn thành tất cả các cấp độ!")
-                        running = False
+        for enemy in enemies:
+            enemy_pos = Point(enemy.enemy_pos[0], enemy.enemy_pos[1])
+            if player.pos.compare(enemy_pos):
+                print("Game Over! Enemy đã bắt được bạn!")
+                running = False
+                break
+
+        goal_pos = Point(stair_pos[0], stair_pos[1])
+        if player.pos.compare(goal_pos):
+            print(f"Chúc mừng! Bạn đã hoàn thành Level {level_manager.current_level}!")
+            if level_manager.next_level():
+                level_data = level_manager.get_level_data()
+                qtable = load_qtable(level_manager.current_level)
+                player = BotAdapter(level_data["player_pos"], GRID_SIZE, level_data["walls"])
+                enemies = [Enemy(level_data["mummy_pos_white"], GRID_SIZE, level_data["walls"], enemy_type="white")]
+                if level_data["mummy_pos_red"]:
+                    enemies.append(Enemy(level_data["mummy_pos_red"], GRID_SIZE, level_data["walls"], enemy_type="red"))
+                stair_pos = level_data["stair_pos"]
+                stair_type = level_data["stair_type"]
+                walls = level_data["walls"]
+                print(f"Chuyển sang Level {level_manager.current_level}")
+            else:
+                print("Chúc mừng! Bạn đã hoàn thành tất cả các cấp độ!")
+                running = False
 
     if game_active:
         player.update_animation(delta_time)
