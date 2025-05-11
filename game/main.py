@@ -193,7 +193,7 @@ while running:
     if menu.play_type == "BOT" and game_active and current_time - last_bot_move_time >= bot_move_interval:
         last_bot_move_time = current_time
 
-        state = coorTuplesToId(player.pos.toTuple(), (enemies[0].enemy_pos[0], enemies[0].enemy_pos[1]))
+        state = coorTuplesToId(player.pos.toTuple(), (enemies[0].enemy_pos[0], enemies[0].enemy_pos[1]), (enemies[1].enemy_pos[0], enemies[1].enemy_pos[1]) if level_data["mummy_pos_red"] else (0 ,0))
         valid_actions = player.findValidMoves()
         state_scores = qtable[state]
         chosen_action = valid_actions[0]

@@ -3,7 +3,7 @@
 player_pos = [1, 1]
 mummy_pos_white = [5, 6]  # Enemy White
 stair_pos = [8, 4]
-stair_type = "LR"
+stair_type = "UD"
 entry_direction = "right"
 walls = [
     (1, 2, 2, 2), (2, 3, 2, 4), (3, 1, 4, 1), (3, 3, 3, 4),
